@@ -1,6 +1,6 @@
 # src/models.py
 """SQLAlchemy ORM models."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, 
@@ -11,6 +11,11 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 
 class Base(DeclarativeBase):
     pass
+
+
+def utc_now():
+    """返回当前UTC时间"""
+    return datetime.now(timezone.utc)
 
 
 class KOL(Base):
@@ -24,8 +29,8 @@ class KOL(Base):
     is_active = Column(Boolean, default=True)
     accuracy_rate = Column(Float, default=0.5)
     influence_score = Column(Float, default=1.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     
     tweets = relationship("Tweet", back_populates="kol", lazy="dynamic")
 
@@ -39,7 +44,7 @@ class Tweet(Base):
     kol_id = Column(Integer, ForeignKey("kols.id"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     posted_at = Column(DateTime)
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=utc_now)
     has_btc_keyword = Column(Boolean, default=False)
     
     kol = relationship("KOL", back_populates="tweets")
@@ -58,7 +63,7 @@ class ModelAnalysis(Base):
     confidence = Column(Float, nullable=False)
     reasoning = Column(Text)
     raw_response = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
     
     tweet = relationship("Tweet", back_populates="model_analyses")
     
@@ -77,7 +82,7 @@ class Sentiment(Base):
     sentiment_label = Column(String(20), nullable=False)
     btc_signal = Column(Boolean, default=False)
     model_consensus = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
     
     tweet = relationship("Tweet", back_populates="sentiment")
 
@@ -87,7 +92,7 @@ class MarketSentimentHistory(Base):
     __tablename__ = "market_sentiment_history"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=utc_now, index=True)
     market_sentiment_index = Column(Float, nullable=False)
     confidence = Column(Float, nullable=False)
     participation_rate = Column(Float, nullable=False)
@@ -107,7 +112,7 @@ class DebateRecord(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     market_sentiment_id = Column(Integer, ForeignKey("market_sentiment_history.id"), nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=utc_now)
     
     proponent_stance = Column(String(20))
     proponent_confidence = Column(Float)

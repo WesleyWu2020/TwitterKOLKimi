@@ -1,9 +1,9 @@
 # tests/test_models.py
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.models import Base, KOL, Tweet, ModelAnalysis, Sentiment, MarketSentimentHistory, DebateRecord
+from src.models import Base, KOL, Tweet, ModelAnalysis, Sentiment
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ class TestKOL:
         
         result = db_session.query(KOL).first()
         assert result.username == "test_user"
-        assert result.accuracy_rate == 0.5  # 默认值
+        assert result.accuracy_rate == 0.5
 
 
 class TestTweet:
@@ -43,7 +43,7 @@ class TestTweet:
             tweet_id="123456789",
             kol_id=kol.id,
             content="Bitcoin to the moon!",
-            posted_at=datetime.utcnow(),
+            posted_at=datetime.now(timezone.utc),
             has_btc_keyword=True
         )
         db_session.add(tweet)
@@ -65,10 +65,12 @@ class TestModelAnalysis:
             tweet_id="123",
             kol_id=kol.id,
             content="Test tweet",
-            posted_at=datetime.utcnow()
+            posted_at=datetime.now(timezone.utc)
         )
         db_session.add(tweet)
         db_session.commit()
+        
+        from sqlalchemy.exc import IntegrityError
         
         # 创建第一条分析
         analysis1 = ModelAnalysis(
@@ -88,5 +90,5 @@ class TestModelAnalysis:
             confidence=0.7
         )
         db_session.add(analysis2)
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             db_session.commit()
