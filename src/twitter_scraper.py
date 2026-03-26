@@ -353,92 +353,183 @@ class TwitterScraper:
             logger.debug(f"Current URL: {current_url}")
             
             # ===== 第 1 步：输入用户名/邮箱 =====
-            # 尝试多种用户名输入框选择器
+            # 截图显示页面有 "Phone, email, or username" 输入框
+            # 这个输入框通常是 input[name='text']
             username_selectors = [
+                "input[name='text']",  # 最常见
                 "input[autocomplete='username']",
-                "input[name='text']",
                 "input[type='text']",
-                "input[autocomplete='email']",
+                "input[inputmode='email']",
             ]
             
             username_input = None
             for selector in username_selectors:
                 try:
                     elem = self.page.locator(selector).first
-                    if elem.count() > 0 and elem.is_visible(timeout=3000):
-                        username_input = elem
-                        logger.debug(f"Found username input: {selector}")
-                        break
-                except:
+                    if elem.count() > 0 and elem.is_visible(timeout=5000):
+                        # 检查 placeholder 是否包含 username/email/phone 关键字
+                        try:
+                            placeholder = elem.get_attribute("placeholder") or ""
+                            if any(kw in placeholder.lower() for kw in ["phone", "email", "username"]):
+                                username_input = elem
+                                logger.debug(f"Found username input: {selector} (placeholder: {placeholder})")
+                                break
+                        except:
+                            # 如果无法获取 placeholder，也接受这个元素
+                            username_input = elem
+                            logger.debug(f"Found username input: {selector}")
+                            break
+                except Exception as e:
+                    logger.debug(f"Selector {selector} failed: {e}")
                     continue
             
             if not username_input:
                 logger.error("Could not find username input field")
+                # 保存截图便于调试
+                try:
+                    self.page.screenshot(path="data/login_error_no_username.png")
+                    logger.info("Screenshot saved to data/login_error_no_username.png")
+                except:
+                    pass
                 return False
             
-            # 输入用户名
+            # 清除输入框并输入用户名
+            username_input.click()
+            username_input.fill("")  # 先清空
+            time.sleep(0.5)
             username_input.fill(self.config.username)
             logger.info(f"Filled username: {self.config.username}")
-            time.sleep(self._get_random_delay(1, 3))
+            time.sleep(self._get_random_delay(2, 4))
             
             # 点击下一步
+            logger.debug("Clicking Next button...")
             if not self._click_button_by_text(["Next", "下一步", "Continue", "继续"]):
                 # 尝试按 Enter 键
                 username_input.press("Enter")
-            time.sleep(self._get_random_delay(3, 5))
             
-            # ===== 第 2 步：处理可能的手机号验证 =====
-            # Twitter 有时会要求输入手机号
-            phone_input = self.page.locator("input[type='tel']").first
-            if phone_input.count() > 0 and phone_input.is_visible(timeout=3000):
-                logger.error("Phone verification required. Please use an account without phone verification.")
-                return False
+            # 等待页面跳转
+            logger.debug("Waiting for page transition...")
+            time.sleep(self._get_random_delay(5, 8))
             
-            # 检查是否是异常登录页面
+            # 检查当前 URL 和页面内容
+            current_url = self.page.url
             page_content = self.page.content().lower()
-            if "unusual" in page_content or "suspicious" in page_content or "suspicious login" in page_content:
-                logger.error("Suspicious login detected by Twitter. Manual verification required.")
-                return False
+            logger.debug(f"After clicking Next - URL: {current_url}")
             
-            # ===== 第 3 步：输入密码 =====
+            # ===== 第 2 步：处理中间验证页面 =====
+            # 检查是否在密码页面
             password_selectors = [
                 "input[type='password']",
                 "input[autocomplete='current-password']",
+                "input[name='password']",
             ]
             
+            # 等待密码输入框出现（最多等待10秒）
             password_input = None
-            for selector in password_selectors:
-                try:
-                    elem = self.page.locator(selector).first
-                    if elem.count() > 0 and elem.is_visible(timeout=5000):
-                        password_input = elem
-                        logger.debug(f"Found password input: {selector}")
-                        break
-                except:
-                    continue
+            max_wait = 10
+            waited = 0
+            while waited < max_wait:
+                for selector in password_selectors:
+                    try:
+                        elem = self.page.locator(selector).first
+                        if elem.count() > 0 and elem.is_visible(timeout=2000):
+                            password_input = elem
+                            logger.debug(f"Found password input: {selector}")
+                            break
+                    except:
+                        continue
+                
+                if password_input:
+                    break
+                
+                # 检查是否仍在用户名页面（说明可能输入错误）
+                username_elem = self.page.locator("input[name='text']").first
+                if username_elem.count() > 0 and username_elem.is_visible(timeout=1000):
+                    # 检查是否有错误信息
+                    error_elem = self.page.locator("[role='alert']").first
+                    if error_elem.count() > 0:
+                        error_text = error_elem.inner_text(timeout=2000)
+                        logger.error(f"Login error on username page: {error_text}")
+                        return False
+                
+                time.sleep(1)
+                waited += 1
+                logger.debug(f"Waiting for password field... ({waited}s)")
             
             if not password_input:
-                logger.error("Could not find password input field")
-                # 截图用于调试
+                # 检查是否是手机号验证页面
+                phone_input = self.page.locator("input[type='tel']").first
+                if phone_input.count() > 0 and phone_input.is_visible(timeout=2000):
+                    logger.error("❌ Phone verification required!")
+                    logger.error("   This account requires phone number verification.")
+                    logger.error("   Please use an account without phone verification,")
+                    logger.error("   or verify manually in a browser first.")
+                    return False
+                
+                # 检查是否是异常登录页面
+                if any(kw in page_content for kw in ["unusual", "suspicious", "confirm your identity"]):
+                    logger.error("❌ Twitter detected suspicious login!")
+                    logger.error("   Please login manually in a browser first to verify.")
+                    try:
+                        self.page.screenshot(path="data/login_suspicious.png")
+                        logger.info("   Screenshot saved to data/login_suspicious.png")
+                    except:
+                        pass
+                    return False
+                
+                logger.error("❌ Could not find password input field")
+                logger.error(f"   Current URL: {current_url}")
                 try:
                     self.page.screenshot(path="data/login_error_no_password.png")
-                    logger.info("Screenshot saved to data/login_error_no_password.png")
+                    logger.info("   Screenshot saved to data/login_error_no_password.png")
                 except:
                     pass
                 return False
             
             # 输入密码
+            password_input.click()
+            password_input.fill("")
+            time.sleep(0.5)
             password_input.fill(self.config.password)
             logger.info("Filled password")
-            time.sleep(self._get_random_delay(1, 3))
+            time.sleep(self._get_random_delay(2, 4))
             
             # 点击登录
+            logger.debug("Clicking Log in button...")
             if not self._click_button_by_text(["Log in", "登录", "Sign in", "Signin"]):
                 password_input.press("Enter")
             
-            logger.info("Submitted login form")
-            time.sleep(self._get_random_delay(6, 10))
+            logger.info("Submitted login form, waiting for redirect...")
+            time.sleep(self._get_random_delay(8, 12))
             
+            # 检查登录结果
+            final_url = self.page.url
+            logger.debug(f"After login - URL: {final_url}")
+            
+            # 检查是否仍在登录相关页面
+            if "login" in final_url or "flow" in final_url:
+                # 检查错误信息
+                error_selectors = [
+                    "[data-testid='toast']",
+                    "[role='alert']",
+                    "span:has-text('wrong')",
+                    "span:has-text('incorrect')",
+                ]
+                for sel in error_selectors:
+                    try:
+                        error_elem = self.page.locator(sel).first
+                        if error_elem.count() > 0:
+                            error_text = error_elem.inner_text(timeout=2000)
+                            if error_text:
+                                logger.error(f"Login error: {error_text}")
+                                break
+                    except:
+                        pass
+                
+                logger.warning("Still on login page after submitting")
+                return False
+            
+            logger.info("✓ Login form submitted successfully")
             return True
             
         except Exception as e:
