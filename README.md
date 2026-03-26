@@ -21,6 +21,32 @@ pip install -r requirements.txt
 
 ### 2. 配置
 
+#### 方式一：使用 OpenRouter + Grok（推荐）
+
+无需登录 Twitter，直接使用 Grok 模型获取数据。
+
+1. 获取 OpenRouter API Key
+   - 访问 https://openrouter.ai/
+   - 注册并创建 API Key
+   - 确保账户有余额（新用户有免费额度）
+
+2. 配置 OpenRouter
+   ```yaml
+   # 编辑 config/config.yaml
+   openrouter:
+     api_key: "sk-or-v1-your-api-key"
+     model: "grok-2-1212"
+   ```
+
+3. 运行程序
+   ```bash
+   python -m src.main --once
+   ```
+
+#### 方式二：使用 Twitter 登录（备选）
+
+如果 OpenRouter 无法使用，可以回退到 Twitter 登录方式。
+
 创建 `config/config.yaml`:
 
 ```yaml
