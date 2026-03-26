@@ -57,13 +57,47 @@ class SentimentMonitor:
     
     def _init_data_fetcher(self, config: Config):
         """初始化数据获取器"""
-        # 使用类型检查确保 openrouter 是有效的配置对象，而不是 MagicMock
+        # 检查配置中的数据源设置
+        data_source = getattr(config, 'data_source', 'grok')
+        
+        if data_source == "xai":
+            # 使用 xAI API (Grok X Search - 真实数据)
+            from src.xai_fetcher import XAIFetcher
+            if hasattr(config, 'xai') and config.xai:
+                api_key = getattr(config.xai, 'api_key', None)
+                model = getattr(config.xai, 'model', 'grok-2-1212')
+                if api_key and api_key.startswith("xai-"):
+                    self.data_fetcher = XAIFetcher(api_key, model)
+                    self.using_grok = False
+                    logger.info("✅ Using xAI API with Grok X Search (REAL-TIME Twitter data)")
+                    return
+                else:
+                    logger.warning("xAI API key not configured correctly, falling back to Grok")
+            else:
+                logger.warning("xAI config not found, falling back to Grok")
+        
+        if data_source == "twitter_api":
+            # 使用 Twitter API (真实数据)
+            from src.twitter_api_fetcher import TwitterAPIFetcher
+            if hasattr(config, 'twitter_api') and config.twitter_api:
+                bearer_token = getattr(config.twitter_api, 'bearer_token', None)
+                if bearer_token and bearer_token != "your_bearer_token_here":
+                    self.data_fetcher = TwitterAPIFetcher(bearer_token)
+                    self.using_grok = False
+                    logger.info("Using Twitter API v2 for REAL data fetching")
+                    return
+                else:
+                    logger.warning("Twitter API bearer token not configured, falling back to Grok")
+            else:
+                logger.warning("Twitter API config not found, falling back to Grok")
+        
+        # 使用 Grok via OpenRouter (模拟数据)
         from src.config import OpenRouterConfig
         if config.openrouter and isinstance(config.openrouter, OpenRouterConfig):
             from src.grok_fetcher import GrokFetcher
             self.data_fetcher = GrokFetcher(config.openrouter)
             self.using_grok = True
-            logger.info("Using Grok via OpenRouter for data fetching")
+            logger.warning("⚠️ Using Grok via OpenRouter (SIMULATED data - not real-time)")
         else:
             from src.twitter_scraper import TwitterScraper
             self.data_fetcher = TwitterScraper(config.twitter, headless=True)
@@ -322,13 +356,11 @@ class SentimentMonitor:
                 
                 # 保存推文
                 self.db.save_tweet(
-                    kol_id=kol.id,
-                    tweet_data={
-                        "tweet_id": tweet.tweet_id,
-                        "content": tweet.content,
-                        "posted_at": tweet.posted_at,
-                        "has_btc_keyword": tweet.has_btc_keyword
-                    }
+                    tweet_id=tweet.tweet_id,
+                    username=tweet.username,
+                    content=tweet.content,
+                    posted_at=tweet.posted_at,
+                    has_btc_keyword=tweet.has_btc_keyword
                 )
                 saved_count += 1
                 

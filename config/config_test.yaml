@@ -1,0 +1,47 @@
+# 测试配置 - 只使用1个KOL快速验证
+openrouter:
+  api_key: "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"
+  model: "x-ai/grok-4.20-beta"
+  base_url: "https://openrouter.ai/api/v1"
+  max_tokens: 4000
+  temperature: 0.3
+
+twitter:
+  username: "DmiWsw"
+  password: "wsw123456..."
+  min_followers: 200000
+  keywords:
+    - "BTC"
+    - "Bitcoin"
+    - "ETH"
+    - "crypto"
+  tweets_per_kol: 5
+  kols:
+    - username: "cz_binance"
+      followers_count: 9200000
+
+models:
+  kimi:
+    api_key: "sk-9MhE8MNXtAX634K1siOH6quakt29NzIh1PlODnLZYmgGrDlu"
+    model: "moonshot-v1-8k"
+    weight: 0.4
+    base_url: "https://api.moonshot.cn/v1"
+  minimax:
+    api_key: "sk-api-FG02Sh8cyh12LKOE-w98chfCWNXEA7CVmcVc-fMQNAIyUgScL7l2CxalA-JitgX-upQWPnBelKl8oKqLOPwRnaFSBHZ49__-lANziMh3hvC_odFo_S8UH24"
+    model: "abab6.5s-chat"
+    weight: 0.3
+    base_url: "https://api.minimax.chat/v1"
+  zhipu:
+    api_key: "4a1a643e06d54f9782269bfd425929e5.9tYGzq2gEuN4Pkhq"
+    model: "glm-4-flash"
+    weight: 0.3
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+
+feishu_webhook: "https://open.feishu.cn/open-apis/bot/v2/hook/ebb1bce2-c297-43ae-9e07-e4c3032ee571"
+feishu_secret: ""
+database_path: "data/sentiment.db"
+debug: false
+
+debate_trigger:
+  sentiment_change_threshold: 0.0    # 总是触发辩论
+  extreme_sentiment_threshold: 0.0   # 总是触发辩论

@@ -56,7 +56,7 @@ class GrokFetcher:
 
     def _build_prompt(self, username: str, count: int = 10) -> str:
         """
-        构建获取推文的 prompt
+        构建获取推文的 prompt - 使用 X Search 工具获取真实数据
 
         Args:
             username: Twitter 用户名
@@ -65,21 +65,31 @@ class GrokFetcher:
         Returns:
             构建好的 prompt 字符串
         """
-        prompt = f"""Please retrieve the {count} most recent tweets from Twitter user @{username}.
+        from datetime import datetime, timedelta
+        
+        # 计算24小时前的时间
+        since_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        
+        prompt = f"""Use the x_search tool to search for recent tweets from @{username} about cryptocurrency, Bitcoin, Ethereum, or blockchain.
+
+Search query: "from:{username} (BTC OR Bitcoin OR ETH OR Ethereum OR crypto) since:{since_date}"
 
 Requirements:
-1. Return the data in valid JSON format
-2. The JSON should have a "tweets" array containing tweet objects
-3. Each tweet object must include these fields:
+1. Use x_search tool to get REAL and RECENT tweets (last 7 days)
+2. Return the data in valid JSON format
+3. The JSON should have a "tweets" array containing tweet objects
+4. Each tweet object must include these fields:
    - tweet_id: The tweet ID (string)
    - username: The Twitter handle without @ (string)
    - display_name: The display name (string)
    - content: The full tweet text (string)
-   - posted_at: ISO 8601 formatted timestamp (string)
+   - posted_at: ISO 8601 formatted timestamp (string, must be from 2025 or 2026)
    - likes: Number of likes (integer)
    - retweets: Number of retweets (integer)
 
 Important notes:
+- CRITICAL: Use x_search tool to fetch REAL data from X platform, do NOT generate fake data
+- Only include tweets from {since_date} onwards (very recent, within last 7 days)
 - Focus on tweets related to cryptocurrency, Bitcoin, Ethereum, or blockchain
 - Ensure the JSON is properly formatted and parseable
 - Use UTC timezone for timestamps
@@ -103,13 +113,17 @@ Return ONLY the JSON response without any additional text or markdown formatting
         try:
             # 处理 markdown 格式的 JSON (```json ... ```)
             cleaned_text = response_text.strip()
+            logger.debug(f"Raw response text (first 1000 chars): {response_text[:1000]}")
+            
             if cleaned_text.startswith("```"):
                 # 提取代码块内容
                 match = re.search(r'```(?:json)?\s*(.*?)\s*```', cleaned_text, re.DOTALL)
                 if match:
                     cleaned_text = match.group(1).strip()
+                    logger.debug("Extracted JSON from markdown code block")
             
             # 解析 JSON
+            logger.debug(f"Attempting to parse JSON: {cleaned_text[:200]}...")
             data = json.loads(cleaned_text)
             
             if not isinstance(data, dict):
@@ -141,7 +155,7 @@ Return ONLY the JSON response without any additional text or markdown formatting
 
     def _parse_single_tweet(self, tweet_data: Dict[str, Any], username: str) -> Optional[TweetData]:
         """
-        解析单个推文数据
+        解析单个推文数据，并验证时间戳合理性
 
         Args:
             tweet_data: 单个推文的字典数据
@@ -159,6 +173,18 @@ Return ONLY the JSON response without any additional text or markdown formatting
             except (ValueError, AttributeError):
                 # 默认使用当前时间
                 posted_at = datetime.now(timezone.utc)
+            
+            # ⚠️ 验证时间戳合理性
+            now = datetime.now(timezone.utc)
+            one_day_ago = now - timedelta(days=1)
+            
+            if posted_at > now:
+                # 未来时间，可能是假的
+                logger.warning(f"Tweet timestamp is in the future: {posted_at}, using current time")
+                posted_at = now
+            elif posted_at < one_day_ago:
+                # 超过1天的推文，可能不是最新的
+                logger.warning(f"Tweet is older than 24h: {posted_at}, marking as stale data")
             
             content = tweet_data.get("content", "")
             
@@ -207,7 +233,7 @@ Return ONLY the JSON response without any additional text or markdown formatting
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You are a helpful assistant that retrieves Twitter data in structured JSON format."
+                        "content": "You have access to X (Twitter) via x_search. Always use x_search to find real, recent tweets. Today's date is 2026-03-26."
                     },
                     {
                         "role": "user",
@@ -218,6 +244,7 @@ Return ONLY the JSON response without any additional text or markdown formatting
                 "temperature": getattr(self.config, "temperature", 0.3)
             }
             
+            logger.info(f"Calling Grok API for @{username}, model: {payload['model']}")
             response = await self.client.post("/chat/completions", json=payload)
             
             if response.status_code != 200:
@@ -235,6 +262,9 @@ Return ONLY the JSON response without any additional text or markdown formatting
             if not content:
                 logger.error("Empty content in API response")
                 return []
+            
+            # 调试：记录原始响应
+            logger.debug(f"Grok raw response for @{username}: {content[:500]}...")
             
             tweets = self._parse_grok_response(content, username)
             logger.info(f"Fetched {len(tweets)} tweets for @{username}")

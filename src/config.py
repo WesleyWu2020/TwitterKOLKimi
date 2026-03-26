@@ -52,6 +52,19 @@ class OpenRouterConfig(BaseModel):
     temperature: float = 0.3
 
 
+class TwitterAPIConfig(BaseModel):
+    """Twitter API v2 配置"""
+    bearer_token: str
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
+
+
+class XAIConfig(BaseModel):
+    """xAI API 配置（用于 Grok X Search）"""
+    api_key: str  # 以 xai- 开头
+    model: str = "grok-2-1212"
+
+
 class Config(BaseModel):
     """主配置类"""
     twitter: TwitterConfig
@@ -62,6 +75,9 @@ class Config(BaseModel):
     debug: bool = False
     debate_trigger: DebateTriggerConfig = Field(default_factory=DebateTriggerConfig)
     openrouter: Optional[OpenRouterConfig] = None
+    data_source: str = "grok"  # "grok" | "twitter_api" | "xai"
+    twitter_api: Optional[TwitterAPIConfig] = None
+    xai: Optional[XAIConfig] = None  # xAI API 配置
     
     @field_validator("models")
     @classmethod

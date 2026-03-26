@@ -117,7 +117,7 @@ class FeishuNotifier:
     
     def _format_sentiment_card(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        格式化市场情绪卡片
+        格式化市场情绪卡片（带数据源警告）
         
         Args:
             data: 市场情绪数据
@@ -129,6 +129,7 @@ class FeishuNotifier:
         confidence = data.get("confidence", 0)
         distribution = data.get("distribution", {})
         active_kols = data.get("active_kols", 0)
+        sample_count = data.get("sample_count", 0)
         
         # 根据指数确定颜色和情绪描述
         if index > 0.7:
@@ -176,15 +177,16 @@ class FeishuNotifier:
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**活跃KOL数:** {active_kols}"
+                        "content": f"**样本统计**\n活跃KOL: {active_kols} | 分析推文: {sample_count} 条"
                     }
                 },
+                {"tag": "hr"},
                 {
                     "tag": "note",
                     "elements": [
                         {
                             "tag": "plain_text",
-                            "content": f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                            "content": f"✅ 数据来源: Grok X Search (实时) | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                         }
                     ]
                 }
@@ -195,7 +197,7 @@ class FeishuNotifier:
     
     def _format_debate_card(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        格式化辩论结果卡片
+        格式化辩论结果卡片（包含详细过程）
         
         Args:
             result: 辩论结果数据
@@ -207,7 +209,14 @@ class FeishuNotifier:
         confidence = result.get("proponent_confidence", 0)
         adjusted_confidence = result.get("proponent_adjusted_confidence", confidence)
         high_risks = result.get("opponent_high_risk_count", 0)
+        medium_risks = result.get("opponent_medium_risk_count", 0)
         recommendation = result.get("final_recommendation", {})
+        
+        # 获取详细过程
+        key_points = result.get("proponent_key_points", [])
+        challenges = result.get("opponent_challenges", [])
+        admitted = result.get("proponent_admitted_points", [])
+        refuted = result.get("proponent_refuted_points", [])
         
         # 根据立场确定颜色
         if stance == "bullish":
@@ -242,12 +251,51 @@ class FeishuNotifier:
         }
         risk_text = risk_map.get(risk_level, risk_level)
         
+        # 置信度变化趋势
+        confidence_change = adjusted_confidence - confidence
+        if confidence_change > 0:
+            trend = f"↗️ +{confidence_change:.1%}"
+        elif confidence_change < 0:
+            trend = f"↘️ {confidence_change:.1%}"
+        else:
+            trend = "➡️ 持平"
+        
+        # 构建详细过程文本
+        # Round 1: 正方论点
+        round1_text = "**🎙️ 正方观点**\n"
+        if key_points:
+            for i, point in enumerate(key_points[:3], 1):
+                round1_text += f"{i}. {point}\n"
+        else:
+            round1_text += "（无详细论点）\n"
+        
+        # Round 2: 反方挑战
+        round2_text = "**⚔️ 反方质疑**\n"
+        if challenges:
+            for i, challenge in enumerate(challenges[:3], 1):
+                round2_text += f"{i}. {challenge}\n"
+        else:
+            round2_text += "（无详细质疑）\n"
+        
+        # Round 3: 正方回应
+        round3_text = "**🛡️ 正方回应**\n"
+        if admitted:
+            round3_text += "✅ 承认:\n"
+            for point in admitted[:2]:
+                round3_text += f"  • {point}\n"
+        if refuted:
+            round3_text += "❌ 反驳:\n"
+            for point in refuted[:2]:
+                round3_text += f"  • {point}\n"
+        if not admitted and not refuted:
+            round3_text += "（无详细回应）\n"
+        
         card = {
             "config": {"wide_screen_mode": True},
             "header": {
                 "title": {
                     "tag": "plain_text",
-                    "content": "🤖 AI 辩论结果"
+                    "content": "🤖 AI 辩论过程"
                 },
                 "template": color
             },
@@ -256,7 +304,7 @@ class FeishuNotifier:
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**立场:** {stance_text}\n**初始置信度:** {confidence:.1%}\n**调整后置信度:** {adjusted_confidence:.1%}"
+                        "content": f"**立场:** {stance_text} | **置信度:** {confidence:.0%} → {adjusted_confidence:.0%} ({trend})"
                     }
                 },
                 {"tag": "hr"},
@@ -264,14 +312,38 @@ class FeishuNotifier:
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**风险提示**\n⚠️ 发现 {high_risks} 个高风险因子"
+                        "content": round1_text
+                    }
+                },
+                {"tag": "hr"},
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": round2_text
+                    }
+                },
+                {"tag": "hr"},
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": round3_text
+                    }
+                },
+                {"tag": "hr"},
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": f"**⚠️ 风险评估**\n🔴 高风险: {high_risks} 个 | 🟡 中风险: {medium_risks} 个"
                     }
                 },
                 {
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**最终建议**\n🎯 行动: {action_text}\n⚡ 风险等级: {risk_text}"
+                        "content": f"**🎯 最终建议**\n行动: {action_text} | 风险等级: {risk_text}"
                     }
                 },
                 {
