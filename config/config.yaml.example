@@ -1,3 +1,7 @@
+# 币圈KOL情绪监控系统配置
+# 复制此文件为 config.yaml 并填入真实值
+# cp config/config.yaml.example config/config.yaml
+
 # Twitter 配置
 twitter:
   username: "your_twitter_username"
