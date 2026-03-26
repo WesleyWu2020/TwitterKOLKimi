@@ -15,6 +15,7 @@ from src.sentiment_analyzer import SentimentAnalyzer
 from src.market_calculator import MarketCalculator
 from src.debate_engine import DebateEngine
 from src.feishu_notifier import FeishuNotifier
+from src.twitter_scraper import TwitterScraper
 
 
 class SentimentMonitor:
@@ -43,6 +44,7 @@ class SentimentMonitor:
             webhook_url=config.feishu_webhook,
             secret=config.feishu_secret
         )
+        self.twitter = TwitterScraper(config.twitter, headless=True)
         
         self.scheduler = BackgroundScheduler()
         self._setup_signal_handlers()
@@ -247,20 +249,91 @@ class SentimentMonitor:
         else:
             return "neutral"
     
+    def fetch_and_save_tweets(self, kols: List[Dict[str, Any]]) -> int:
+        """
+        抓取并保存 KOL 推文
+        
+        Args:
+            kols: KOL 列表
+            
+        Returns:
+            保存的推文数量
+        """
+        if not kols:
+            logger.info("No KOLs configured, skipping tweet fetch")
+            return 0
+        
+        logger.info(f"Fetching tweets for {len(kols)} KOLs...")
+        
+        # 抓取推文
+        tweets = self.twitter.fetch_all_kols_tweets(kols, max_tweets_per_kol=self.config.twitter.tweets_per_kol)
+        
+        if not tweets:
+            logger.warning("No tweets fetched")
+            return 0
+        
+        # 保存到数据库
+        saved_count = 0
+        for tweet in tweets:
+            try:
+                # 获取或创建 KOL
+                kol = self.db.get_or_create_kol(
+                    username=tweet.username,
+                    display_name=tweet.display_name
+                )
+                
+                # 保存推文
+                self.db.save_tweet(
+                    kol_id=kol.id,
+                    tweet_data={
+                        "tweet_id": tweet.tweet_id,
+                        "content": tweet.content,
+                        "posted_at": tweet.posted_at,
+                        "has_btc_keyword": tweet.has_btc_keyword
+                    }
+                )
+                saved_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error saving tweet {tweet.tweet_id}: {e}")
+                continue
+        
+        logger.info(f"Saved {saved_count}/{len(tweets)} tweets to database")
+        return saved_count
+    
     def run_once(self):
         """运行一次完整的分析流程"""
         logger.info("Running single analysis cycle")
         
-        # 分析待处理推文
-        tweet_count = self.analyze_pending_tweets()
+        # Step 1: 获取配置的 KOL 列表（简化：从配置文件读取）
+        # 实际项目中可以从数据库或配置文件加载
+        kols = self._load_kols_from_config()
         
-        # 计算和通知
+        # Step 2: 抓取推文
+        fetched_count = self.fetch_and_save_tweets(kols)
+        
+        # Step 3: 分析待处理推文
+        analyzed_count = self.analyze_pending_tweets()
+        
+        # Step 4: 计算和通知
         sentiment = self.calculate_and_notify()
         
         return {
-            "tweets_processed": tweet_count,
+            "fetched": fetched_count,
+            "analyzed": analyzed_count,
             "sentiment": sentiment
         }
+    
+    def _load_kols_from_config(self) -> List[Dict[str, Any]]:
+        """
+        从配置加载 KOL 列表
+        
+        实际项目中可以从数据库或外部 API 加载
+        这里简化处理，返回空列表或测试数据
+        """
+        # 返回空列表，由用户在配置中指定 KOL
+        # 或使用默认值进行测试
+        return []
     
     def start_scheduler(self, analysis_interval: int = 300):
         """
