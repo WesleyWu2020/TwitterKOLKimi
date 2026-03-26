@@ -11,6 +11,7 @@ Polymarket BTC/ETH 情绪监控系统主入口
     --interval  定时任务间隔（秒，默认: 300）
 """
 import argparse
+import asyncio
 import sys
 import os
 from pathlib import Path
@@ -124,7 +125,8 @@ def main():
     # 运行模式
     if args.once:
         logger.info("Running in single-shot mode")
-        result = monitor.run_once()
+        # 使用 asyncio 运行异步方法
+        result = asyncio.run(monitor.run_once())
         logger.info(f"Analysis completed: {result}")
     else:
         logger.info(f"Running in scheduler mode (interval: {args.interval}s)")

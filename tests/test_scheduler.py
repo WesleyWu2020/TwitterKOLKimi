@@ -16,10 +16,12 @@ class TestSentimentMonitorInit:
             sentiment_change_threshold=0.3,
             extreme_sentiment_threshold=0.7
         )
+        config.openrouter = None  # 明确设置为 None，使用 Twitter Scraper
         
         monitor = SentimentMonitor(config)
         assert monitor.config == config
         assert monitor.db is not None
+        assert monitor.using_grok is False
 
 
 class TestAnalyzePendingTweets:
@@ -37,6 +39,7 @@ class TestAnalyzePendingTweets:
             sentiment_change_threshold=0.3,
             extreme_sentiment_threshold=0.7
         )
+        config.openrouter = None  # 明确设置为 None，使用 Twitter Scraper
         return SentimentMonitor(config)
 
     @patch("src.scheduler.SentimentAnalyzer")
@@ -77,6 +80,7 @@ class TestCalculateAndNotify:
             sentiment_change_threshold=0.3,
             extreme_sentiment_threshold=0.7
         )
+        config.openrouter = None  # 明确设置为 None，使用 Twitter Scraper
         return SentimentMonitor(config)
 
     @patch("src.scheduler.FeishuNotifier")
@@ -120,6 +124,7 @@ class TestShouldTriggerDebate:
         config.database_path = "sqlite:///:memory:"
         config.models = {}
         config.feishu_webhook = "https://test"
+        config.openrouter = None  # 明确设置为 None，使用 Twitter Scraper
         monitor = SentimentMonitor(config)
         
         # 极端看涨
@@ -139,6 +144,7 @@ class TestShouldTriggerDebate:
         config.database_path = "sqlite:///:memory:"
         config.models = {}
         config.feishu_webhook = "https://test"
+        config.openrouter = None  # 明确设置为 None，使用 Twitter Scraper
         monitor = SentimentMonitor(config)
         
         # 大幅变化

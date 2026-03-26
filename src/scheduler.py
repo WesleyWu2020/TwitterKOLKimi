@@ -1,10 +1,11 @@
 # src/scheduler.py
 """主调度器模块."""
+import asyncio
 import time
 import signal
 import sys
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from loguru import logger
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -15,7 +16,6 @@ from src.sentiment_analyzer import SentimentAnalyzer
 from src.market_calculator import MarketCalculator
 from src.debate_engine import DebateEngine
 from src.feishu_notifier import FeishuNotifier
-from src.twitter_scraper import TwitterScraper
 
 
 class SentimentMonitor:
@@ -44,12 +44,31 @@ class SentimentMonitor:
             webhook_url=config.feishu_webhook,
             secret=config.feishu_secret
         )
-        self.twitter = TwitterScraper(config.twitter, headless=True)
+        
+        # 初始化数据获取器：优先使用 Grok，回退到 Twitter Scraper
+        self.data_fetcher: Optional[Any] = None
+        self.using_grok = False
+        self._init_data_fetcher(config)
         
         self.scheduler = BackgroundScheduler()
         self._setup_signal_handlers()
         
         logger.info("SentimentMonitor initialized")
+    
+    def _init_data_fetcher(self, config: Config):
+        """初始化数据获取器"""
+        # 使用类型检查确保 openrouter 是有效的配置对象，而不是 MagicMock
+        from src.config import OpenRouterConfig
+        if config.openrouter and isinstance(config.openrouter, OpenRouterConfig):
+            from src.grok_fetcher import GrokFetcher
+            self.data_fetcher = GrokFetcher(config.openrouter)
+            self.using_grok = True
+            logger.info("Using Grok via OpenRouter for data fetching")
+        else:
+            from src.twitter_scraper import TwitterScraper
+            self.data_fetcher = TwitterScraper(config.twitter, headless=True)
+            self.using_grok = False
+            logger.info("Using Twitter Scraper for data fetching")
     
     def _setup_signal_handlers(self):
         """设置信号处理器"""
@@ -249,9 +268,9 @@ class SentimentMonitor:
         else:
             return "neutral"
     
-    def fetch_and_save_tweets(self, kols: List[Dict[str, Any]]) -> int:
+    async def fetch_and_save_tweets(self, kols: List[Dict[str, Any]]) -> int:
         """
-        抓取并保存 KOL 推文
+        抓取并保存 KOL 推文（支持 Grok 和 Twitter）
         
         Args:
             kols: KOL 列表
@@ -265,16 +284,35 @@ class SentimentMonitor:
         
         logger.info(f"Fetching tweets for {len(kols)} KOLs...")
         
-        # 抓取推文
-        tweets = self.twitter.fetch_all_kols_tweets(kols, max_tweets_per_kol=self.config.twitter.tweets_per_kol)
+        # 获取每个 KOL 的最大推文数
+        max_tweets_per_kol = self.config.twitter.tweets_per_kol if self.config.twitter else 10
         
-        if not tweets:
+        # 根据使用的获取器类型调用不同方法
+        if self.using_grok:
+            # Grok 是异步的，返回 Dict[str, List[TweetData]]
+            results = await self.data_fetcher.fetch_all_kols_tweets(
+                [kol.get("username", kol) if isinstance(kol, dict) else kol for kol in kols],
+                max_tweets=max_tweets_per_kol
+            )
+            # 合并所有推文
+            from src.grok_fetcher import TweetData
+            all_tweets: List[TweetData] = []
+            for username, tweets in results.items():
+                all_tweets.extend(tweets)
+        else:
+            # Twitter Scraper 是同步的，返回 List[Tweet]
+            all_tweets = self.data_fetcher.fetch_all_kols_tweets(
+                kols,
+                max_tweets_per_kol=max_tweets_per_kol
+            )
+        
+        if not all_tweets:
             logger.warning("No tweets fetched")
             return 0
         
         # 保存到数据库
         saved_count = 0
-        for tweet in tweets:
+        for tweet in all_tweets:
             try:
                 # 获取或创建 KOL
                 kol = self.db.get_or_create_kol(
@@ -298,24 +336,24 @@ class SentimentMonitor:
                 logger.error(f"Error saving tweet {tweet.tweet_id}: {e}")
                 continue
         
-        logger.info(f"Saved {saved_count}/{len(tweets)} tweets to database")
+        logger.info(f"Saved {saved_count}/{len(all_tweets)} tweets to database")
         return saved_count
     
-    def run_once(self):
-        """运行一次完整的分析流程"""
+    async def run_once(self):
+        """运行一次完整的分析流程（异步）"""
         logger.info("Running single analysis cycle")
         
         # Step 1: 获取配置的 KOL 列表（简化：从配置文件读取）
         # 实际项目中可以从数据库或配置文件加载
         kols = self._load_kols_from_config()
         
-        # Step 2: 抓取推文
-        fetched_count = self.fetch_and_save_tweets(kols)
+        # Step 2: 抓取推文（异步）
+        fetched_count = await self.fetch_and_save_tweets(kols)
         
-        # Step 3: 分析待处理推文
+        # Step 3: 分析待处理推文（保持同步）
         analyzed_count = self.analyze_pending_tweets()
         
-        # Step 4: 计算和通知
+        # Step 4: 计算和通知（保持同步）
         sentiment = self.calculate_and_notify()
         
         return {
@@ -352,6 +390,19 @@ class SentimentMonitor:
         logger.warning("No KOLs configured. Please add KOLs to config.yaml or database.")
         return []
     
+    def _run_async_job(self):
+        """包装异步 run_once 供调度器调用"""
+        try:
+            # 创建新的事件循环来运行异步任务
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self.run_once())
+            loop.close()
+            return result
+        except Exception as e:
+            logger.error(f"Error in scheduled job: {e}")
+            return None
+    
     def start_scheduler(self, analysis_interval: int = 300):
         """
         启动定时调度器
@@ -361,9 +412,9 @@ class SentimentMonitor:
         """
         logger.info(f"Starting scheduler with interval: {analysis_interval}s")
         
-        # 添加定时任务
+        # 添加定时任务（使用同步包装器调用异步方法）
         self.scheduler.add_job(
-            func=self.run_once,
+            func=self._run_async_job,
             trigger=IntervalTrigger(seconds=analysis_interval),
             id="sentiment_analysis",
             name="Sentiment Analysis",
