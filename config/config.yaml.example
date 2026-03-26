@@ -1,0 +1,46 @@
+# Twitter 配置
+twitter:
+  username: "your_twitter_username"
+  password: "your_twitter_password"
+  min_followers: 100000
+  keywords:
+    - "BTC"
+    - "Bitcoin"
+    - "比特币"
+    - "ETH"
+    - "以太坊"
+    - "crypto"
+  tweets_per_kol: 10
+
+# AI 模型配置
+models:
+  kimi:
+    api_key: "your_kimi_api_key"
+    model: "moonshot-v1-8k"
+    weight: 0.4
+    base_url: "https://api.moonshot.cn/v1"
+  
+  minimax:
+    api_key: "your_minimax_api_key"
+    model: "abab6.5s-chat"
+    weight: 0.3
+    base_url: "https://api.minimax.chat/v1"
+  
+  zhipu:
+    api_key: "your_zhipu_api_key"
+    model: "glm-4-flash"
+    weight: 0.3
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+
+# 飞书配置
+feishu_webhook: "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxx"
+feishu_secret: "your_feishu_secret"
+
+# 系统配置
+database_path: "data/sentiment.db"
+debug: false
+
+# 辩论触发配置
+debate_trigger:
+  sentiment_change_threshold: 0.3
+  extreme_sentiment_threshold: 0.7
