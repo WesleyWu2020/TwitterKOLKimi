@@ -2,7 +2,7 @@
 import os
 import tempfile
 import pytest
-from src.config import Config, AIModelConfig, TwitterConfig, DebateTriggerConfig, load_config
+from src.config import Config, AIModelConfig, TwitterConfig, DebateTriggerConfig, OpenRouterConfig, load_config
 
 
 class TestAIModelConfig:
@@ -36,6 +36,30 @@ class TestDebateTriggerConfig:
         config = DebateTriggerConfig()
         assert config.sentiment_change_threshold == 0.3
         assert config.extreme_sentiment_threshold == 0.7
+
+
+class TestOpenRouterConfig:
+    def test_default_values(self) -> None:
+        config = OpenRouterConfig(api_key="test-key")
+        assert config.api_key == "test-key"
+        assert config.model == "grok-2-1212"
+        assert config.base_url == "https://openrouter.ai/api/v1"
+        assert config.max_tokens == 4000
+        assert config.temperature == 0.3
+
+    def test_custom_values(self) -> None:
+        config = OpenRouterConfig(
+            api_key="custom-key",
+            model="custom-model",
+            base_url="https://custom.api.com",
+            max_tokens=8000,
+            temperature=0.5
+        )
+        assert config.api_key == "custom-key"
+        assert config.model == "custom-model"
+        assert config.base_url == "https://custom.api.com"
+        assert config.max_tokens == 8000
+        assert config.temperature == 0.5
 
 
 class TestConfig:

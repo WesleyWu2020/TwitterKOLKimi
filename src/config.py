@@ -9,6 +9,7 @@ __all__ = [
     "AIModelConfig",
     "TwitterConfig",
     "DebateTriggerConfig",
+    "OpenRouterConfig",
     "Config",
     "load_config",
 ]
@@ -42,6 +43,15 @@ class DebateTriggerConfig(BaseModel):
     extreme_sentiment_threshold: float = 0.7
 
 
+class OpenRouterConfig(BaseModel):
+    """OpenRouter API 配置"""
+    api_key: str
+    model: str = "grok-2-1212"
+    base_url: str = "https://openrouter.ai/api/v1"
+    max_tokens: int = 4000
+    temperature: float = 0.3
+
+
 class Config(BaseModel):
     """主配置类"""
     twitter: TwitterConfig
@@ -51,6 +61,7 @@ class Config(BaseModel):
     database_path: str = "data/sentiment.db"
     debug: bool = False
     debate_trigger: DebateTriggerConfig = Field(default_factory=DebateTriggerConfig)
+    openrouter: Optional[OpenRouterConfig] = None
     
     @field_validator("models")
     @classmethod
