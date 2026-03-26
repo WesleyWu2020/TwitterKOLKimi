@@ -346,45 +346,93 @@ class TwitterScraper:
             是否成功完成登录流程
         """
         try:
-            # 等待页面加载
-            time.sleep(self._get_random_delay(4, 7))
+            # 等待页面完全加载（包括模态对话框）
+            logger.debug("Waiting for page to fully load...")
+            time.sleep(self._get_random_delay(6, 10))
             
             current_url = self.page.url
             logger.debug(f"Current URL: {current_url}")
             
-            # ===== 第 1 步：输入用户名/邮箱 =====
-            # 截图显示页面有 "Phone, email, or username" 输入框
-            # 这个输入框通常是 input[name='text']
-            username_selectors = [
-                "input[name='text']",  # 最常见
-                "input[autocomplete='username']",
-                "input[type='text']",
-                "input[inputmode='email']",
-            ]
+            # 保存当前页面截图用于调试
+            try:
+                self.page.screenshot(path="data/login_step1_start.png")
+                logger.debug("Screenshot saved: data/login_step1_start.png")
+            except:
+                pass
             
+            # ===== 第 1 步：输入用户名/邮箱 =====
+            # 策略：等待并尝试多种方式找到输入框
             username_input = None
-            for selector in username_selectors:
+            max_attempts = 5
+            
+            for attempt in range(max_attempts):
+                logger.debug(f"Looking for username input (attempt {attempt + 1}/{max_attempts})...")
+                
+                # 方法1：通过 placeholder 文本查找
                 try:
-                    elem = self.page.locator(selector).first
-                    if elem.count() > 0 and elem.is_visible(timeout=5000):
-                        # 检查 placeholder 是否包含 username/email/phone 关键字
+                    # 查找 placeholder 包含 phone/email/username 的输入框
+                    inputs = self.page.locator("input").all()
+                    for inp in inputs:
                         try:
-                            placeholder = elem.get_attribute("placeholder") or ""
-                            if any(kw in placeholder.lower() for kw in ["phone", "email", "username"]):
-                                username_input = elem
-                                logger.debug(f"Found username input: {selector} (placeholder: {placeholder})")
-                                break
+                            placeholder = inp.get_attribute("placeholder") or ""
+                            if any(kw in placeholder.lower() for kw in ["phone", "email", "username", "帐号", "账户"]):
+                                if inp.is_visible(timeout=2000):
+                                    username_input = inp
+                                    logger.info(f"Found username input by placeholder: '{placeholder}'")
+                                    break
                         except:
-                            # 如果无法获取 placeholder，也接受这个元素
-                            username_input = elem
-                            logger.debug(f"Found username input: {selector}")
-                            break
+                            continue
+                    if username_input:
+                        break
                 except Exception as e:
-                    logger.debug(f"Selector {selector} failed: {e}")
-                    continue
+                    logger.debug(f"Method 1 (placeholder) failed: {e}")
+                
+                # 方法2：通过 name='text' 查找
+                if not username_input:
+                    try:
+                        elem = self.page.locator("input[name='text']").first
+                        if elem.count() > 0 and elem.is_visible(timeout=2000):
+                            username_input = elem
+                            logger.info("Found username input by name='text'")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Method 2 (name=text) failed: {e}")
+                
+                # 方法3：通过 autocomplete='username' 查找
+                if not username_input:
+                    try:
+                        elem = self.page.locator("input[autocomplete='username']").first
+                        if elem.count() > 0 and elem.is_visible(timeout=2000):
+                            username_input = elem
+                            logger.info("Found username input by autocomplete")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Method 3 (autocomplete) failed: {e}")
+                
+                # 方法4：查找第一个可见的 text/email 类型输入框
+                if not username_input:
+                    try:
+                        inputs = self.page.locator("input[type='text'], input[type='email']").all()
+                        for inp in inputs:
+                            try:
+                                if inp.is_visible(timeout=1000):
+                                    username_input = inp
+                                    logger.info("Found username input by type")
+                                    break
+                            except:
+                                continue
+                        if username_input:
+                            break
+                    except Exception as e:
+                        logger.debug(f"Method 4 (type) failed: {e}")
+                
+                # 如果还没找到，等待一下再试
+                if not username_input:
+                    logger.debug(f"Username input not found yet, waiting...")
+                    time.sleep(2)
             
             if not username_input:
-                logger.error("Could not find username input field")
+                logger.error("❌ Could not find username input field after all attempts")
                 # 保存截图便于调试
                 try:
                     self.page.screenshot(path="data/login_error_no_username.png")
@@ -394,11 +442,17 @@ class TwitterScraper:
                 return False
             
             # 清除输入框并输入用户名
+            logger.debug("Clicking username input...")
             username_input.click()
-            username_input.fill("")  # 先清空
             time.sleep(0.5)
-            username_input.fill(self.config.username)
-            logger.info(f"Filled username: {self.config.username}")
+            
+            logger.debug("Clearing username input...")
+            username_input.fill("")
+            time.sleep(0.5)
+            
+            logger.debug(f"Typing username: {self.config.username}")
+            username_input.type(self.config.username, delay=50)  # 模拟人类输入，带随机延迟
+            logger.info(f"✓ Filled username: {self.config.username}")
             time.sleep(self._get_random_delay(2, 4))
             
             # 点击下一步
