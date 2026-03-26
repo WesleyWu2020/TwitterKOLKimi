@@ -2,7 +2,26 @@
 # 复制此文件为 config.yaml 并填入真实值
 # cp config/config.yaml.example config/config.yaml
 
-# Twitter 配置
+# ============================================
+# 推荐：OpenRouter + Grok 配置（无需 Twitter 登录）
+# ============================================
+# 使用 OpenRouter API 调用 Grok 模型获取 Twitter 数据
+# 优点：无需登录 Twitter，不会被封号
+# 注册：https://openrouter.ai/
+
+openrouter:
+  api_key: "sk-or-v1-your-openrouter-api-key"  # 从 https://openrouter.ai/keys 获取
+  model: "grok-2-1212"                          # Grok 模型
+  base_url: "https://openrouter.ai/api/v1"
+  max_tokens: 4000
+  temperature: 0.3
+
+# ============================================
+# 备选：Twitter 配置（当 OpenRouter 未配置时使用）
+# ============================================
+# 如果 OpenRouter 配置存在且有效，系统将优先使用 Grok
+# 只有 OpenRouter 未配置时，才会使用 Twitter 登录方式
+
 twitter:
   username: "your_twitter_username"
   password: "your_twitter_password"
