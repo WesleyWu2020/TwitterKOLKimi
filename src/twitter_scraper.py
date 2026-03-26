@@ -248,30 +248,206 @@ class TwitterScraper:
             logger.error(f"Error closing browser: {e}")
     
     def _check_login_status(self) -> bool:
-        """检查是否已登录"""
+        """
+        检查是否已登录
+        
+        通过检查主页元素或导航栏头像来判断
+        """
         if not self.page:
             return False
         
         try:
-            # 检查是否存在登录后的元素（如主页时间线）
-            self.page.goto("https://twitter.com/home", timeout=10000)
+            # 检查当前 URL
+            current_url = self.page.url
+            
+            # 如果已经在主页，直接检查元素
+            if "twitter.com/home" in current_url:
+                home_indicators = [
+                    "[data-testid='primaryColumn']",
+                    "[data-testid='sidebarColumn']",
+                    "[data-testid='AppTabBar_Home_Link']",
+                ]
+                for selector in home_indicators:
+                    try:
+                        if self.page.locator(selector).first.count() > 0:
+                            logger.debug(f"Found home indicator: {selector}")
+                            return True
+                    except:
+                        continue
+            
+            # 尝试访问主页
+            self.page.goto("https://twitter.com/home", timeout=15000)
             time.sleep(self._get_random_delay(2, 4))
             
-            # 检查是否有 "For you" 或 "Following" 标签
-            if self.page.locator("text=For you").is_visible(timeout=5000) or \
-               self.page.locator("text=Following").is_visible(timeout=5000):
-                logger.info("Already logged in")
-                return True
+            # 检查是否被重定向到登录页
+            if "login" in self.page.url or "flow" in self.page.url:
+                logger.debug("Redirected to login page, not logged in")
+                return False
+            
+            # 检查主页元素
+            indicators = [
+                ("text=For you", "For you feed"),
+                ("text=Following", "Following feed"),
+                ("[data-testid='SideNav_AccountSwitcher_Button']", "Account switcher"),
+                ("[aria-label='Compose tweet']", "Compose button"),
+            ]
+            
+            for selector, name in indicators:
+                try:
+                    if self.page.locator(selector).first.is_visible(timeout=3000):
+                        logger.info(f"✓ Login verified: Found {name}")
+                        return True
+                except:
+                    continue
+            
+            logger.debug("Login check: No home indicators found")
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Login check error: {e}")
+            return False
+    
+    def _click_button_by_text(self, keywords: List[str], timeout: int = 5000) -> bool:
+        """
+        通过关键词点击按钮（支持多种语言）
+        
+        Args:
+            keywords: 按钮文本关键词列表
+            timeout: 超时时间（毫秒）
+            
+        Returns:
+            是否成功点击
+        """
+        try:
+            # 查找所有按钮
+            buttons = self.page.locator("button").all()
+            
+            for btn in buttons:
+                try:
+                    text = btn.inner_text(timeout=1000).lower()
+                    if any(kw.lower() in text for kw in keywords):
+                        btn.click()
+                        logger.debug(f"Clicked button: {text}")
+                        return True
+                except:
+                    continue
             
             return False
             
         except Exception as e:
-            logger.warning(f"Login check failed: {e}")
+            logger.warning(f"Failed to click button: {e}")
+            return False
+    
+    def _handle_login_flow(self) -> bool:
+        """
+        处理完整的登录流程，包括各种验证页面
+        
+        Returns:
+            是否成功完成登录流程
+        """
+        try:
+            # 等待页面加载
+            time.sleep(self._get_random_delay(4, 7))
+            
+            current_url = self.page.url
+            logger.debug(f"Current URL: {current_url}")
+            
+            # ===== 第 1 步：输入用户名/邮箱 =====
+            # 尝试多种用户名输入框选择器
+            username_selectors = [
+                "input[autocomplete='username']",
+                "input[name='text']",
+                "input[type='text']",
+                "input[autocomplete='email']",
+            ]
+            
+            username_input = None
+            for selector in username_selectors:
+                try:
+                    elem = self.page.locator(selector).first
+                    if elem.count() > 0 and elem.is_visible(timeout=3000):
+                        username_input = elem
+                        logger.debug(f"Found username input: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not username_input:
+                logger.error("Could not find username input field")
+                return False
+            
+            # 输入用户名
+            username_input.fill(self.config.username)
+            logger.info(f"Filled username: {self.config.username}")
+            time.sleep(self._get_random_delay(1, 3))
+            
+            # 点击下一步
+            if not self._click_button_by_text(["Next", "下一步", "Continue", "继续"]):
+                # 尝试按 Enter 键
+                username_input.press("Enter")
+            time.sleep(self._get_random_delay(3, 5))
+            
+            # ===== 第 2 步：处理可能的手机号验证 =====
+            # Twitter 有时会要求输入手机号
+            phone_input = self.page.locator("input[type='tel']").first
+            if phone_input.count() > 0 and phone_input.is_visible(timeout=3000):
+                logger.error("Phone verification required. Please use an account without phone verification.")
+                return False
+            
+            # 检查是否是异常登录页面
+            page_content = self.page.content().lower()
+            if "unusual" in page_content or "suspicious" in page_content or "suspicious login" in page_content:
+                logger.error("Suspicious login detected by Twitter. Manual verification required.")
+                return False
+            
+            # ===== 第 3 步：输入密码 =====
+            password_selectors = [
+                "input[type='password']",
+                "input[autocomplete='current-password']",
+            ]
+            
+            password_input = None
+            for selector in password_selectors:
+                try:
+                    elem = self.page.locator(selector).first
+                    if elem.count() > 0 and elem.is_visible(timeout=5000):
+                        password_input = elem
+                        logger.debug(f"Found password input: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not password_input:
+                logger.error("Could not find password input field")
+                # 截图用于调试
+                try:
+                    self.page.screenshot(path="data/login_error_no_password.png")
+                    logger.info("Screenshot saved to data/login_error_no_password.png")
+                except:
+                    pass
+                return False
+            
+            # 输入密码
+            password_input.fill(self.config.password)
+            logger.info("Filled password")
+            time.sleep(self._get_random_delay(1, 3))
+            
+            # 点击登录
+            if not self._click_button_by_text(["Log in", "登录", "Sign in", "Signin"]):
+                password_input.press("Enter")
+            
+            logger.info("Submitted login form")
+            time.sleep(self._get_random_delay(6, 10))
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in login flow: {e}")
             return False
     
     def _login(self, max_retries: int = 3) -> bool:
         """
-        登录 Twitter
+        登录 Twitter（增强版，支持多种验证场景）
         
         Args:
             max_retries: 最大重试次数
@@ -284,48 +460,67 @@ class TwitterScraper:
                 logger.info(f"Login attempt {attempt + 1}/{max_retries}")
                 
                 # 访问登录页
+                logger.debug("Navigating to login page...")
                 self.page.goto("https://twitter.com/i/flow/login", timeout=30000)
-                time.sleep(self._get_random_delay(3, 6))
                 
-                # 输入用户名
-                username_input = self.page.locator("input[autocomplete='username']")
-                username_input.fill(self.config.username)
-                time.sleep(self._get_random_delay(1, 3))
+                # 执行登录流程
+                if not self._handle_login_flow():
+                    logger.warning("Login flow failed, retrying...")
+                    time.sleep(self._get_random_delay(5, 10))
+                    continue
                 
-                # 点击下一步
-                self.page.locator("text=Next").first.click()
-                time.sleep(self._get_random_delay(2, 4))
+                # 检查登录结果
+                logger.debug("Checking login status...")
                 
-                # 输入密码
-                password_input = self.page.locator("input[type='password']")
-                password_input.fill(self.config.password)
-                time.sleep(self._get_random_delay(1, 3))
-                
-                # 点击登录
-                self.page.locator("text=Log in").first.click()
-                time.sleep(self._get_random_delay(5, 8))
+                # 等待页面跳转
+                time.sleep(self._get_random_delay(3, 5))
                 
                 # 检查是否登录成功
                 if self._check_login_status():
-                    logger.info("Login successful")
+                    logger.info("✅ Login successful!")
                     self.is_logged_in = True
                     self._save_cookies()
                     return True
                 
-                # 检查是否有验证码
-                if self.page.locator("text=Verify").is_visible(timeout=5000) or \
-                   self.page.locator("text=Challenge").is_visible(timeout=5000):
-                    logger.error("Login challenge/verification required. Please login manually first.")
+                # 检查是否有验证码/挑战
+                page_content = self.page.content().lower()
+                challenge_keywords = ["verify", "challenge", "authentication", "confirm", "unusual"]
+                if any(kw in page_content for kw in challenge_keywords):
+                    logger.error("❌ Login challenge/verification required!")
+                    logger.error("   Please login manually once to verify your account.")
+                    
+                    # 保存截图便于诊断
+                    try:
+                        self.page.screenshot(path="data/login_challenge.png")
+                        logger.info("   Screenshot saved to data/login_challenge.png")
+                    except:
+                        pass
                     return False
                 
-                logger.warning(f"Login attempt {attempt + 1} failed, retrying...")
-                time.sleep(self._get_random_delay(5, 10))
+                # 检查是否在登录页面（可能密码错误）
+                if "login" in self.page.url or "flow" in self.page.url:
+                    error_msg = ""
+                    try:
+                        # 尝试获取错误信息
+                        error_elem = self.page.locator("[data-testid='toast']").first
+                        if error_elem.count() > 0:
+                            error_msg = error_elem.inner_text(timeout=3000)
+                    except:
+                        pass
+                    
+                    if error_msg:
+                        logger.warning(f"Login page still visible. Error: {error_msg}")
+                    else:
+                        logger.warning("Still on login page, possibly wrong password")
+                
+                logger.warning(f"Login attempt {attempt + 1} did not succeed, waiting before retry...")
+                time.sleep(self._get_random_delay(8, 15))
                 
             except Exception as e:
-                logger.error(f"Login error: {e}")
+                logger.error(f"Login attempt {attempt + 1} error: {e}")
                 time.sleep(self._get_random_delay(5, 10))
         
-        logger.error("All login attempts failed")
+        logger.error("❌ All login attempts failed")
         return False
     
     def _ensure_logged_in(self) -> bool:
