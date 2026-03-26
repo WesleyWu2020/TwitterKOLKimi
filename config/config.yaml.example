@@ -15,6 +15,23 @@ twitter:
     - "以太坊"
     - "crypto"
   tweets_per_kol: 10
+  
+  # 监控的 KOL 列表（币圈大V）
+  # 可以从 Twitter 搜索或 https://coincodex.com/social/ 查找
+  kols:
+    # 示例：可以添加你想监控的 KOL
+    # - username: "elonmusk"           # Elon Musk
+    #   followers_count: 180000000
+    # - username: "cz_binance"         # CZ (Binance 创始人)
+    #   followers_count: 9000000
+    # - username: "VitalikButerin"     # V神 (以太坊创始人)
+    #   followers_count: 5000000
+    # - username: "saylor"             # Michael Saylor
+    #   followers_count: 3000000
+    # - username: "CryptoWendyO"       # 知名女 KOL
+    #   followers_count: 400000
+    # 
+    # 提示：首次使用时建议只配置 1-2 个 KOL 测试
 
 # AI 模型配置
 models:

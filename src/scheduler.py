@@ -328,11 +328,28 @@ class SentimentMonitor:
         """
         从配置加载 KOL 列表
         
-        实际项目中可以从数据库或外部 API 加载
-        这里简化处理，返回空列表或测试数据
+        优先从 config.twitter.kols 读取，如果没有则返回空列表
         """
-        # 返回空列表，由用户在配置中指定 KOL
-        # 或使用默认值进行测试
+        # 尝试从配置读取 KOL 列表
+        kols = getattr(self.config.twitter, 'kols', None)
+        
+        if kols and isinstance(kols, list):
+            logger.info(f"Loaded {len(kols)} KOLs from config")
+            return kols
+        
+        # 如果没有配置 KOL，尝试从数据库加载已有的 KOL
+        try:
+            from src.models import KOL
+            with self.db.session_scope() as session:
+                db_kols = session.query(KOL).filter(KOL.is_active == True).all()
+                if db_kols:
+                    result = [{"username": k.username, "followers_count": k.followers_count} for k in db_kols]
+                    logger.info(f"Loaded {len(result)} KOLs from database")
+                    return result
+        except Exception as e:
+            logger.warning(f"Could not load KOLs from database: {e}")
+        
+        logger.warning("No KOLs configured. Please add KOLs to config.yaml or database.")
         return []
     
     def start_scheduler(self, analysis_interval: int = 300):

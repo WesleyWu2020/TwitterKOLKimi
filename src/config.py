@@ -1,7 +1,7 @@
 # src/config.py
 """Pydantic configuration models."""
 import yaml
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -33,6 +33,7 @@ class TwitterConfig(BaseModel):
         "BTC", "Bitcoin", "比特币", "ETH", "以太坊", "crypto"
     ])
     tweets_per_kol: int = 10
+    kols: Optional[List[Dict[str, Any]]] = Field(default_factory=list)  # 监控的KOL列表
 
 
 class DebateTriggerConfig(BaseModel):
