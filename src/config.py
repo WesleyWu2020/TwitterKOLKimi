@@ -1,8 +1,19 @@
 # src/config.py
 """Pydantic configuration models."""
+import yaml
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+__all__ = [
+    "AIModelConfig",
+    "TwitterConfig",
+    "DebateTriggerConfig",
+    "Config",
+    "load_config",
+]
+
+WEIGHT_TOLERANCE = 0.01
 
 
 class AIModelConfig(BaseModel):
@@ -30,14 +41,8 @@ class DebateTriggerConfig(BaseModel):
     extreme_sentiment_threshold: float = 0.7
 
 
-class Config(BaseSettings):
+class Config(BaseModel):
     """主配置类"""
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        yaml_file="config/config.yaml",
-        env_nested_delimiter="__"
-    )
-    
     twitter: TwitterConfig
     models: Dict[str, AIModelConfig]
     feishu_webhook: str
@@ -50,15 +55,16 @@ class Config(BaseSettings):
     @classmethod
     def validate_model_weights(cls, v: Dict[str, AIModelConfig]) -> Dict[str, AIModelConfig]:
         """验证模型权重之和为1"""
+        if not v:
+            raise ValueError("Models dictionary cannot be empty")
         total_weight = sum(model.weight for model in v.values())
-        if abs(total_weight - 1.0) > 0.01:
+        if abs(total_weight - 1.0) > WEIGHT_TOLERANCE:
             raise ValueError(f"Model weights must sum to 1.0, got {total_weight}")
         return v
 
 
 def load_config(config_path: str = "config/config.yaml") -> Config:
     """从YAML文件加载配置"""
-    import yaml
     with open(config_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return Config(**data)
