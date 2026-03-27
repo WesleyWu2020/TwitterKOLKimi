@@ -1,7 +1,7 @@
 # xAI API 配置 - 使用 Grok X Search 获取真实 Twitter 数据
 # 这是推荐的生产环境配置
 
-data_source: "xai_sdk"  # ← 使用 xAI SDK (推荐，真实数据)
+data_source: "xai"  # ← 使用 xAI REST API (推荐，真实数据)
 
 xai:
   api_key: "xai-your-api-key-here"                    # ← 从 https://x.ai/api 获取

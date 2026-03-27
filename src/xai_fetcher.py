@@ -1,5 +1,5 @@
 # src/xai_fetcher.py
-"""使用 xAI 官方 API 调用 Grok X Search 获取真实 Twitter 数据."""
+"""使用 xAI REST API 获取真实 Twitter 数据."""
 import json
 import logging
 import re
@@ -28,18 +28,19 @@ class TweetData:
     likes: int = 0
     retweets: int = 0
     has_btc_keyword: bool = False
+    url: str = ""
 
 
 class XAIFetcher:
-    """通过 xAI 官方 API 调用 Grok X Search 获取真实推文"""
+    """通过 xAI REST API 调用 Grok 获取推文"""
 
-    def __init__(self, api_key: str, model: str = "grok-2-1212"):
+    def __init__(self, api_key: str, model: str = "grok-3"):
         """
         初始化 XAI Fetcher
         
         Args:
-            api_key: xAI API Key (以 xai- 开头)
-            model: 模型名称
+            api_key: xAI API Key
+            model: 模型名称（grok-3, grok-2-1212 等）
         """
         self.api_key = api_key
         self.model = model
@@ -50,53 +51,78 @@ class XAIFetcher:
         }
         logger.info(f"XAIFetcher initialized with model: {model}")
 
-    def _build_search_prompt(self, username: str, max_tweets: int = 10) -> str:
-        """构建搜索 prompt"""
+    def _build_prompt(self, username: str, max_tweets: int = 10) -> str:
+        """构建获取推文的 prompt"""
         since_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         
         return f"""Search X (Twitter) for the most recent posts from @{username} about cryptocurrency, Bitcoin, Ethereum, or blockchain.
 
 Search parameters:
-- Query: "from:{username} (BTC OR Bitcoin OR ETH OR Ethereum OR crypto OR blockchain) since:{since_date}"
+- User: @{username}
+- Keywords: BTC, Bitcoin, ETH, Ethereum, crypto, blockchain
+- Since: {since_date}
 - Max results: {max_tweets}
-
-Return the results in valid JSON format:
-{{
-  "tweets": [
-    {{
-      "tweet_id": "string",
-      "username": "{username}",
-      "display_name": "string",
-      "content": "string",
-      "posted_at": "ISO 8601 timestamp",
-      "likes": integer,
-      "retweets": integer
-    }}
-  ]
-}}
 
 Requirements:
 1. Use x_search tool to get REAL data from X platform
-2. Only include tweets from {since_date} onwards (last 7 days)
-3. Ensure timestamps are accurate and recent
-4. Return ONLY valid JSON, no markdown formatting"""
+2. Return tweets in valid JSON format
+3. Each tweet must include:
+   - tweet_id: The tweet ID
+   - username: "{username}"
+   - display_name: Display name
+   - content: Full tweet text
+   - posted_at: ISO 8601 timestamp (2025 or 2026)
+   - likes: Number of likes
+   - retweets: Number of retweets
+   - url: Full URL to tweet (https://x.com/{username}/status/TWEET_ID)
+
+Return ONLY valid JSON in this format:
+{{
+  "tweets": [
+    {{
+      "tweet_id": "...",
+      "username": "{username}",
+      "display_name": "...",
+      "content": "...",
+      "posted_at": "2026-...",
+      "likes": 1234,
+      "retweets": 567,
+      "url": "https://x.com/{username}/status/..."
+    }}
+  ]
+}}"""
 
     def _call_api(self, prompt: str) -> Optional[str]:
-        """调用 xAI API - 使用简单方式获取推文数据"""
+        """调用 xAI REST API"""
         try:
-            # 简化：直接要求 Grok 返回 JSON，让它内部使用 x_search
             payload = {
                 "model": self.model,
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You have access to X platform. Find real, recent tweets from the specified user about crypto/Bitcoin. Return ONLY valid JSON array."
+                        "content": "You are an assistant with access to X (Twitter) platform. Use x_search tool to find real, recent tweets. Today's date is 2026-03-27."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "x_search",
+                            "description": "Search X platform for tweets",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                ],
+                "tool_choice": "auto",
                 "max_tokens": 4000,
                 "temperature": 0.3
             }
@@ -116,11 +142,11 @@ Requirements:
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             
-            # 记录使用的 sources
+            # 检查使用的 sources
             usage = data.get("usage", {})
             sources = usage.get("num_sources_used", 0)
             if sources > 0:
-                logger.info(f"✅ xAI used {sources} sources (X platform data)")
+                logger.info(f"✅ xAI used {sources} sources from X platform")
             else:
                 logger.warning("⚠️ xAI used 0 sources - data may be from training set")
             
@@ -156,21 +182,26 @@ Requirements:
                     content = tweet_data.get("content", "")
                     has_btc = any(kw.lower() in content.lower() for kw in BTC_KEYWORDS)
                     
+                    # 构建 URL
+                    tweet_id = str(tweet_data.get("tweet_id", ""))
+                    url = tweet_data.get("url", "")
+                    if not url and tweet_id:
+                        url = f"https://x.com/{username}/status/{tweet_id}"
+                    
                     tweet = TweetData(
-                        tweet_id=str(tweet_data.get("tweet_id", "")),
+                        tweet_id=tweet_id,
                         username=tweet_data.get("username", username),
                         display_name=tweet_data.get("display_name", username),
                         content=content,
                         posted_at=posted_at,
                         likes=int(tweet_data.get("likes", 0)),
                         retweets=int(tweet_data.get("retweets", 0)),
-                        has_btc_keyword=has_btc
+                        has_btc_keyword=has_btc,
+                        url=url
                     )
                     tweets.append(tweet)
                 except Exception as e:
                     logger.warning(f"Error parsing tweet: {e}")
-            
-            logger.info(f"Parsed {len(tweets)} tweets from xAI response")
             
         except Exception as e:
             logger.error(f"Error parsing response: {e}")
@@ -179,9 +210,9 @@ Requirements:
 
     def fetch_tweets_from_kol(self, username: str, max_tweets: int = 10) -> List[TweetData]:
         """获取单个 KOL 的推文"""
-        logger.info(f"Fetching tweets from xAI for @{username}")
+        logger.info(f"Fetching tweets from xAI REST API for @{username}")
         
-        prompt = self._build_search_prompt(username, max_tweets)
+        prompt = self._build_prompt(username, max_tweets)
         response = self._call_api(prompt)
         
         if not response:
@@ -189,7 +220,11 @@ Requirements:
         
         return self._parse_response(response, username)
 
-    def fetch_all_kols_tweets(self, kols: List[Dict[str, Any]], max_tweets: int = 10) -> Dict[str, List[TweetData]]:
+    def fetch_all_kols_tweets(
+        self,
+        kols: List[Dict[str, Any]],
+        max_tweets: int = 10
+    ) -> Dict[str, List[TweetData]]:
         """批量获取多个 KOL 的推文"""
         results = {}
         
