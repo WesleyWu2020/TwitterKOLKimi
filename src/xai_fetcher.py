@@ -1,5 +1,5 @@
 # src/xai_fetcher.py
-"""使用 xAI REST API 获取真实 Twitter 数据."""
+"""使用 xAI Chat Completions API 获取 Twitter 数据."""
 import json
 import logging
 import re
@@ -32,7 +32,7 @@ class TweetData:
 
 
 class XAIFetcher:
-    """通过 xAI REST API 调用 Grok 获取推文"""
+    """通过 xAI Chat Completions API 调用 Grok"""
 
     def __init__(self, api_key: str, model: str = "grok-4.20-reasoning"):
         """
@@ -40,7 +40,7 @@ class XAIFetcher:
         
         Args:
             api_key: xAI API Key
-            model: 模型名称（grok-4.20-reasoning, grok-3 等）
+            model: 模型名称
         """
         self.api_key = api_key
         self.model = model
@@ -51,56 +51,42 @@ class XAIFetcher:
         }
         logger.info(f"XAIFetcher initialized with model: {model}")
 
-    def _build_prompt(self, username: str, max_tweets: int = 10) -> str:
-        """构建获取推文的 prompt"""
-        since_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-        
-        return f"""Search X (Twitter) for the most recent posts from @{username} about cryptocurrency, Bitcoin, Ethereum, or blockchain.
+    def _call_api(self, username: str, max_tweets: int = 10) -> Optional[str]:
+        """调用 xAI Chat Completions API"""
+        try:
+            since_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+            
+            url = f"{self.base_url}/chat/completions"
+            
+            # 强制工具调用的 prompt
+            prompt = f"""You MUST use the web_search tool to find real tweets from X platform.
 
-Search parameters:
-- User: @{username}
-- Keywords: BTC, Bitcoin, ETH, Ethereum, crypto, blockchain
-- Since: {since_date}
-- Max results: {max_tweets}
+Search for: from:{username} (Bitcoin OR BTC OR crypto OR Ethereum OR ETH) since:{since_date}
 
-Requirements:
-1. Use x_search tool to get REAL data from X platform
-2. Return tweets in valid JSON format
-3. Each tweet must include:
-   - tweet_id: The tweet ID
-   - username: "{username}"
-   - display_name: Display name
-   - content: Full tweet text
-   - posted_at: ISO 8601 timestamp (2025 or 2026)
-   - likes: Number of likes
-   - retweets: Number of retweets
-   - url: Full URL to tweet (https://x.com/{username}/status/TWEET_ID)
-
-Return ONLY valid JSON in this format:
+Return EXACTLY {max_tweets} tweets in this JSON format:
 {{
   "tweets": [
     {{
-      "tweet_id": "...",
+      "tweet_id": "string",
       "username": "{username}",
-      "display_name": "...",
-      "content": "...",
-      "posted_at": "2026-...",
-      "likes": 1234,
-      "retweets": 567,
-      "url": "https://x.com/{username}/status/..."
+      "display_name": "string", 
+      "content": "full tweet text",
+      "posted_at": "2025-XX-XX or 2026-XX-XX",
+      "likes": number,
+      "retweets": number,
+      "url": "https://x.com/{username}/status/ID"
     }}
   ]
-}}"""
+}}
 
-    def _call_api(self, prompt: str) -> Optional[str]:
-        """调用 xAI REST API"""
-        try:
+IMPORTANT: Use web_search tool. Do NOT generate fake data."""
+            
             payload = {
                 "model": self.model,
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You are an assistant with access to X (Twitter) platform. Use x_search tool to find real, recent tweets. Today's date is 2026-03-27."
+                        "content": "You are an assistant with web_search tool access. Today's date is 2026-03-27. ALWAYS use web_search to find real data. Never make up information."
                     },
                     {
                         "role": "user",
@@ -111,67 +97,38 @@ Return ONLY valid JSON in this format:
                     {
                         "type": "function",
                         "function": {
-                            "name": "x_search",
-                            "description": "Search X (Twitter) platform for real-time tweets from specific users or about specific topics",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "query": {
-                                        "type": "string",
-                                        "description": "X search query using standard syntax like 'from:username keyword'"
-                                    }
-                                },
-                                "required": ["query"]
-                            }
-                        }
-                    },
-                    {
-                        "type": "function",
-                        "function": {
                             "name": "web_search",
-                            "description": "Search the web for information as fallback",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "query": {
-                                        "type": "string",
-                                        "description": "Web search query"
-                                    }
-                                },
-                                "required": ["query"]
-                            }
+                            "description": "Search the web for real-time information from X platform and other sources"
                         }
                     }
                 ],
                 "tool_choice": "auto",
                 "max_tokens": 4000,
-                "temperature": 0.3
+                "temperature": 0.0
             }
             
-            logger.info(f"Calling xAI API with model: {self.model}")
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=self.headers,
-                json=payload,
-                timeout=60
-            )
+            logger.info(f"Calling xAI API for @{username}...")
+            response = requests.post(url, headers=self.headers, json=payload, timeout=60)
             
             if response.status_code != 200:
                 logger.error(f"xAI API error: {response.status_code} - {response.text}")
                 return None
             
             data = response.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             
-            # 检查使用的 sources
-            usage = data.get("usage", {})
-            sources = usage.get("num_sources_used", 0)
-            if sources > 0:
-                logger.info(f"✅ xAI used {sources} sources from X platform")
+            # 检查工具调用
+            message = data.get("choices", [{}])[0].get("message", {})
+            tool_calls = message.get("tool_calls", [])
+            
+            if tool_calls:
+                logger.info(f"✅ Triggered {len(tool_calls)} tool call(s)")
+                for tc in tool_calls:
+                    logger.info(f"   Tool: {tc.get('function', {}).get('name')}")
             else:
-                logger.warning("⚠️ xAI used 0 sources - data may be from training set")
+                logger.warning("⚠️ No tool calls - data may be from training set")
             
-            return content
+            # 返回内容
+            return message.get("content", "")
             
         except Exception as e:
             logger.error(f"Error calling xAI API: {e}")
@@ -203,7 +160,6 @@ Return ONLY valid JSON in this format:
                     content = tweet_data.get("content", "")
                     has_btc = any(kw.lower() in content.lower() for kw in BTC_KEYWORDS)
                     
-                    # 构建 URL
                     tweet_id = str(tweet_data.get("tweet_id", ""))
                     url = tweet_data.get("url", "")
                     if not url and tweet_id:
@@ -231,10 +187,9 @@ Return ONLY valid JSON in this format:
 
     def fetch_tweets_from_kol(self, username: str, max_tweets: int = 10) -> List[TweetData]:
         """获取单个 KOL 的推文"""
-        logger.info(f"Fetching tweets from xAI REST API for @{username}")
+        logger.info(f"Fetching tweets for @{username}")
         
-        prompt = self._build_prompt(username, max_tweets)
-        response = self._call_api(prompt)
+        response = self._call_api(username, max_tweets)
         
         if not response:
             return []
