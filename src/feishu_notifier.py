@@ -5,7 +5,7 @@ import base64
 import hashlib
 import hmac
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from loguru import logger
 import requests
 
