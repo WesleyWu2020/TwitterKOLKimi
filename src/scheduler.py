@@ -60,21 +60,36 @@ class SentimentMonitor:
         # 检查配置中的数据源设置
         data_source = getattr(config, 'data_source', 'grok')
         
+        if data_source == "xai_sdk":
+            # 使用 xAI SDK (推荐 - Grok X Search 真实数据)
+            try:
+                from src.xai_sdk_fetcher import XAISDKFetcher
+                if hasattr(config, 'xai') and config.xai:
+                    api_key = getattr(config.xai, 'api_key', None)
+                    model = getattr(config.xai, 'model', 'grok-4.20-reasoning')
+                    if api_key and api_key.startswith("xai-"):
+                        self.data_fetcher = XAISDKFetcher(api_key, model)
+                        self.using_grok = False
+                        logger.info("✅ Using xAI SDK with Grok X Search (REAL-TIME Twitter data)")
+                        return
+                    else:
+                        logger.warning("xAI API key not configured correctly")
+                else:
+                    logger.warning("xAI config not found")
+            except ImportError as e:
+                logger.warning(f"xai-sdk not installed: {e}")
+        
         if data_source == "xai":
-            # 使用 xAI API (Grok X Search - 真实数据)
+            # 使用 xAI REST API (备选)
             from src.xai_fetcher import XAIFetcher
             if hasattr(config, 'xai') and config.xai:
                 api_key = getattr(config.xai, 'api_key', None)
-                model = getattr(config.xai, 'model', 'grok-2-1212')
+                model = getattr(config.xai, 'model', 'grok-3')
                 if api_key and api_key.startswith("xai-"):
                     self.data_fetcher = XAIFetcher(api_key, model)
                     self.using_grok = False
-                    logger.info("✅ Using xAI API with Grok X Search (REAL-TIME Twitter data)")
+                    logger.info("Using xAI REST API (REAL-TIME Twitter data)")
                     return
-                else:
-                    logger.warning("xAI API key not configured correctly, falling back to Grok")
-            else:
-                logger.warning("xAI config not found, falling back to Grok")
         
         if data_source == "twitter_api":
             # 使用 Twitter API (真实数据)
@@ -331,6 +346,16 @@ class SentimentMonitor:
             # 合并所有推文
             from src.grok_fetcher import TweetData
             all_tweets: List[TweetData] = []
+            for username, tweets in results.items():
+                all_tweets.extend(tweets)
+        elif hasattr(self.data_fetcher, '__class__') and 'XAI' in self.data_fetcher.__class__.__name__:
+            # xAI fetcher 是同步的，返回 Dict[str, List[TweetData]]
+            results = self.data_fetcher.fetch_all_kols_tweets(
+                kols,
+                max_tweets=max_tweets_per_kol
+            )
+            # 合并所有推文
+            all_tweets = []
             for username, tweets in results.items():
                 all_tweets.extend(tweets)
         else:

@@ -82,44 +82,26 @@ Requirements:
 4. Return ONLY valid JSON, no markdown formatting"""
 
     def _call_api(self, prompt: str) -> Optional[str]:
-        """调用 xAI API"""
+        """调用 xAI API - 使用简单方式获取推文数据"""
         try:
+            # 简化：直接要求 Grok 返回 JSON，让它内部使用 x_search
             payload = {
                 "model": self.model,
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You have access to X platform via x_search tool. Today's date is 2026-03-26. Always use x_search to find real, recent tweets."
+                        "content": "You have access to X platform. Find real, recent tweets from the specified user about crypto/Bitcoin. Return ONLY valid JSON array."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                "tools": [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "x_search",
-                            "description": "Search for posts on X (Twitter) platform",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "query": {
-                                        "type": "string",
-                                        "description": "X search query using standard syntax"
-                                    }
-                                },
-                                "required": ["query"]
-                            }
-                        }
-                    }
-                ],
-                "tool_choice": "auto",
                 "max_tokens": 4000,
                 "temperature": 0.3
             }
             
+            logger.info(f"Calling xAI API with model: {self.model}")
             response = requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=self.headers,
@@ -134,10 +116,13 @@ Requirements:
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             
-            # 检查是否有工具调用结果
-            tool_calls = data.get("choices", [{}])[0].get("message", {}).get("tool_calls", [])
-            if tool_calls:
-                logger.info(f"x_search tool was called: {tool_calls}")
+            # 记录使用的 sources
+            usage = data.get("usage", {})
+            sources = usage.get("num_sources_used", 0)
+            if sources > 0:
+                logger.info(f"✅ xAI used {sources} sources (X platform data)")
+            else:
+                logger.warning("⚠️ xAI used 0 sources - data may be from training set")
             
             return content
             

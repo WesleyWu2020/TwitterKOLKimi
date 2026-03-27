@@ -12,5 +12,8 @@ apscheduler>=3.10.0
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
 
+# xAI SDK (for Grok X Search real-time Twitter data)
+xai-sdk>=1.0.0
+
 # Optional (for Twitter scraping)
 # twscrape>=0.0.0  # Uncomment if needed

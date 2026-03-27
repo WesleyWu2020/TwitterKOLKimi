@@ -1,11 +1,11 @@
 # xAI API 配置 - 使用 Grok X Search 获取真实 Twitter 数据
 # 这是推荐的生产环境配置
 
-data_source: "xai"  # ← 使用 xAI API (真实数据)
+data_source: "xai_sdk"  # ← 使用 xAI SDK (推荐，真实数据)
 
 xai:
-  api_key: "xai-your-api-key-here"  # ← 从 https://x.ai/api 获取 (以 xai- 开头)
-  model: "grok-2-1212"              # 或 "grok-beta"
+  api_key: "xai-your-api-key-here"                    # ← 从 https://x.ai/api 获取
+  model: "grok-4.20-reasoning"                       # SDK 推荐模型
 
 # Twitter 配置（用于 KOL 列表和其他设置）
 twitter:
