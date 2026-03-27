@@ -34,13 +34,13 @@ class TweetData:
 class XAIFetcher:
     """通过 xAI REST API 调用 Grok 获取推文"""
 
-    def __init__(self, api_key: str, model: str = "grok-3"):
+    def __init__(self, api_key: str, model: str = "grok-4.20-reasoning"):
         """
         初始化 XAI Fetcher
         
         Args:
             api_key: xAI API Key
-            model: 模型名称（grok-3, grok-2-1212 等）
+            model: 模型名称（grok-4.20-reasoning, grok-3 等）
         """
         self.api_key = api_key
         self.model = model
@@ -112,12 +112,33 @@ Return ONLY valid JSON in this format:
                         "type": "function",
                         "function": {
                             "name": "x_search",
-                            "description": "Search X platform for tweets",
+                            "description": "Search X (Twitter) platform for real-time tweets from specific users or about specific topics",
                             "parameters": {
                                 "type": "object",
                                 "properties": {
-                                    "query": {"type": "string"}
-                                }
+                                    "query": {
+                                        "type": "string",
+                                        "description": "X search query using standard syntax like 'from:username keyword'"
+                                    }
+                                },
+                                "required": ["query"]
+                            }
+                        }
+                    },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "description": "Search the web for information as fallback",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": {
+                                        "type": "string",
+                                        "description": "Web search query"
+                                    }
+                                },
+                                "required": ["query"]
                             }
                         }
                     }
