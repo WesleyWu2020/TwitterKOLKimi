@@ -37,6 +37,7 @@ class TweetData:
     likes: int = 0
     retweets: int = 0
     has_btc_keyword: bool = False
+    url: str = ""  # 推文链接
 
 
 class XAISDKFetcher:
@@ -104,7 +105,8 @@ class XAISDKFetcher:
       "content": "完整推文内容",
       "posted_at": "ISO 8601 timestamp",
       "likes": integer,
-      "retweets": integer
+      "retweets": integer,
+      "url": "https://x.com/username/status/tweet_id"
     }}
   ]
 }}
@@ -166,15 +168,22 @@ class XAISDKFetcher:
                     content = tweet_data.get("content", "")
                     has_btc = any(kw.lower() in content.lower() for kw in BTC_KEYWORDS)
                     
+                    # 构建推文 URL
+                    tweet_id = str(tweet_data.get("tweet_id", ""))
+                    url = tweet_data.get("url", "")
+                    if not url and tweet_id:
+                        url = f"https://x.com/{username}/status/{tweet_id}"
+                    
                     tweet = TweetData(
-                        tweet_id=str(tweet_data.get("tweet_id", "")),
+                        tweet_id=tweet_id,
                         username=tweet_data.get("username", username),
                         display_name=tweet_data.get("display_name", username),
                         content=content,
                         posted_at=posted_at,
                         likes=int(tweet_data.get("likes", 0)),
                         retweets=int(tweet_data.get("retweets", 0)),
-                        has_btc_keyword=has_btc
+                        has_btc_keyword=has_btc,
+                        url=url
                     )
                     tweets.append(tweet)
                 except Exception as e:

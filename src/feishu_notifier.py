@@ -89,17 +89,18 @@ class FeishuNotifier:
             logger.error(f"Error sending message to Feishu: {e}")
             return False
     
-    def send_market_sentiment(self, sentiment_data: Dict[str, Any]) -> bool:
+    def send_market_sentiment(self, sentiment_data: Dict[str, Any], tweet_urls: List[Dict[str, str]] = None) -> bool:
         """
         发送市场情绪通知
         
         Args:
             sentiment_data: 市场情绪数据
+            tweet_urls: 可选，推文链接列表
             
         Returns:
             是否发送成功
         """
-        card = self._format_sentiment_card(sentiment_data)
+        card = self._format_sentiment_card(sentiment_data, tweet_urls)
         return self._send_message(card)
     
     def send_debate_result(self, debate_result: Dict[str, Any]) -> bool:
@@ -115,12 +116,13 @@ class FeishuNotifier:
         card = self._format_debate_card(debate_result)
         return self._send_message(card)
     
-    def _format_sentiment_card(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_sentiment_card(self, data: Dict[str, Any], tweet_urls: List[Dict[str, str]] = None) -> Dict[str, Any]:
         """
-        格式化市场情绪卡片（带数据源警告）
+        格式化市场情绪卡片（带数据源警告和推文链接）
         
         Args:
             data: 市场情绪数据
+            tweet_urls: 推文链接列表
             
         Returns:
             飞书卡片格式
@@ -148,6 +150,70 @@ class FeishuNotifier:
             color = "grey"
             mood = "⚪ 中性"
         
+        # 构建基础元素
+        elements = [
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**当前情绪:** {mood}\n**情绪指数:** {index:.3f}\n**置信度:** {confidence:.1%}"
+                }
+            },
+            {"tag": "hr"},
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**情绪分布**\n🟢 看涨: {distribution.get('bullish', 0)} | ⚪ 中性: {distribution.get('neutral', 0)} | 🔴 看跌: {distribution.get('bearish', 0)}"
+                }
+            },
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**样本统计**\n活跃KOL: {active_kols} | 分析推文: {sample_count} 条"
+                }
+            }
+        ]
+        
+        # 添加可折叠的推文链接列表
+        if tweet_urls:
+            links_text = f"**📎 参考推文 ({len(tweet_urls)}条)**\n\n"
+            for i, item in enumerate(tweet_urls[:10], 1):  # 最多显示10条
+                username = item.get('username', 'unknown')
+                preview = item.get('content_preview', '')
+                url = item.get('url', '')
+                links_text += f"{i}. [@{username}]({url})\n   {preview}\n\n"
+            
+            if len(tweet_urls) > 10:
+                links_text += f"*...还有 {len(tweet_urls) - 10} 条推文*"
+            
+            elements.append({"tag": "hr"})
+            elements.append({
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": links_text
+                },
+                "collapsible": True,
+                "header": {
+                    "tag": "plain_text",
+                    "content": f"📎 查看参考推文 ({len(tweet_urls)}条)"
+                }
+            })
+        
+        # 添加底部信息
+        elements.append({"tag": "hr"})
+        elements.append({
+            "tag": "note",
+            "elements": [
+                {
+                    "tag": "plain_text",
+                    "content": f"✅ 数据来源: Grok X Search (实时) | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                }
+            ]
+        })
+        
         card = {
             "config": {"wide_screen_mode": True},
             "header": {
@@ -157,40 +223,7 @@ class FeishuNotifier:
                 },
                 "template": color
             },
-            "elements": [
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": f"**当前情绪:** {mood}\n**情绪指数:** {index:.3f}\n**置信度:** {confidence:.1%}"
-                    }
-                },
-                {"tag": "hr"},
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": f"**情绪分布**\n🟢 看涨: {distribution.get('bullish', 0)} | ⚪ 中性: {distribution.get('neutral', 0)} | 🔴 看跌: {distribution.get('bearish', 0)}"
-                    }
-                },
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": f"**样本统计**\n活跃KOL: {active_kols} | 分析推文: {sample_count} 条"
-                    }
-                },
-                {"tag": "hr"},
-                {
-                    "tag": "note",
-                    "elements": [
-                        {
-                            "tag": "plain_text",
-                            "content": f"✅ 数据来源: Grok X Search (实时) | 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                        }
-                    ]
-                }
-            ]
+            "elements": elements
         }
         
         return card

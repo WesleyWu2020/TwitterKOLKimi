@@ -46,6 +46,7 @@ class Tweet(Base):
     posted_at = Column(DateTime)
     fetched_at = Column(DateTime, default=utc_now)
     has_btc_keyword = Column(Boolean, default=False)
+    url = Column(String(500), default="")  # 推文链接
     
     kol = relationship("KOL", back_populates="tweets")
     sentiment = relationship("Sentiment", back_populates="tweet", uselist=False)

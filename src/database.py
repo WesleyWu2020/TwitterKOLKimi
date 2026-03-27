@@ -88,7 +88,8 @@ class Database:
         username: str,
         content: str,
         posted_at: Optional[datetime] = None,
-        has_btc_keyword: bool = False
+        has_btc_keyword: bool = False,
+        url: str = ""
     ) -> Tweet:
         """
         保存推文
@@ -99,6 +100,7 @@ class Database:
             content: 推文内容
             posted_at: 发布时间
             has_btc_keyword: 是否包含BTC关键词
+            url: 推文链接
             
         Returns:
             Tweet对象
@@ -124,7 +126,8 @@ class Database:
                 kol_id=kol.id,
                 content=content,
                 posted_at=posted_at or datetime.now(timezone.utc),
-                has_btc_keyword=has_btc_keyword
+                has_btc_keyword=has_btc_keyword,
+                url=url
             )
             session.add(tweet)
             session.commit()
@@ -412,5 +415,43 @@ class Database:
                     "distribution": record.distribution
                 }
             return None
+        finally:
+            session.close()
+
+
+    def get_recent_tweet_urls(self, hours: int = 1, limit: int = 20) -> List[Dict[str, str]]:
+        """
+        获取最近推文的 URL 列表
+        
+        Args:
+            hours: 时间范围（小时）
+            limit: 最大返回数量
+            
+        Returns:
+            推文链接列表，每个元素包含 username, content_preview, url
+        """
+        session = self.get_session()
+        try:
+            since = datetime.now(timezone.utc) - timedelta(hours=hours)
+            
+            tweets = session.query(Tweet, KOL).join(
+                KOL, Tweet.kol_id == KOL.id
+            ).filter(
+                Tweet.fetched_at >= since,
+                Tweet.url != ""
+            ).order_by(
+                desc(Tweet.fetched_at)
+            ).limit(limit).all()
+            
+            result = []
+            for tweet, kol in tweets:
+                result.append({
+                    "username": kol.username,
+                    "content_preview": tweet.content[:80] + "..." if len(tweet.content) > 80 else tweet.content,
+                    "url": tweet.url,
+                    "posted_at": tweet.posted_at
+                })
+            
+            return result
         finally:
             session.close()

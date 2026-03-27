@@ -198,9 +198,12 @@ class SentimentMonitor:
         # 保存历史记录
         self.db.save_market_sentiment(sentiment_data)
         
+        # 获取推文链接列表
+        tweet_urls = self.db.get_recent_tweet_urls(hours=1, limit=15)
+        
         # 发送通知
         try:
-            self.feishu.send_market_sentiment(sentiment_data)
+            self.feishu.send_market_sentiment(sentiment_data, tweet_urls)
             logger.info("Market sentiment notification sent")
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")
@@ -385,7 +388,8 @@ class SentimentMonitor:
                     username=tweet.username,
                     content=tweet.content,
                     posted_at=tweet.posted_at,
-                    has_btc_keyword=tweet.has_btc_keyword
+                    has_btc_keyword=tweet.has_btc_keyword,
+                    url=getattr(tweet, 'url', '')
                 )
                 saved_count += 1
                 
